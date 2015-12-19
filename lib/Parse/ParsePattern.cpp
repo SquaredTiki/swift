@@ -264,18 +264,34 @@ Parser::parseParameterClause(SourceLoc &leftParenLoc,
       if (Tok.is(tok::colon)) {
         param.ColonLoc = consumeToken();
 
-        // Special case handling of @autoclosure attribute on the type, which
-        // was supported in Swift 1.0 and 1.1, but removed in Swift 1.2 (moved
-        // to a decl attribute).
-        if (Tok.is(tok::at_sign) &&
-            peekToken().isContextualKeyword("autoclosure")) {
-          SourceLoc AtLoc = consumeToken(tok::at_sign);
-          SourceLoc ACLoc = consumeToken(tok::identifier);
-          diagnose(AtLoc, diag::autoclosure_is_decl_attribute)
-            .fixItRemove(SourceRange(AtLoc, ACLoc))
-            .fixItInsert(StartLoc, "@autoclosure ");
-          param.Attrs.add(new (Context) AutoClosureAttr(AtLoc, ACLoc,
+        // Check if token is @ sign ergo an attribute
+        if (Tok.is(tok::at_sign)) {
+          Token nextToken = peekToken();
+
+          // Special case handling of @autoclosure attribute on the type, which
+          // was supported in Swift 1.0 and 1.1, but removed in Swift 1.2 (moved
+          // to a decl attribute).
+          if (nextToken.isContextualKeyword("autoclosure")) {
+            SourceLoc AtLoc = consumeToken(tok::at_sign);
+            SourceLoc ACLoc = consumeToken(tok::identifier);
+            diagnose(AtLoc, diag::autoclosure_is_decl_attribute)
+             .fixItRemove(SourceRange(AtLoc, ACLoc))
+             .fixItInsert(StartLoc, "@autoclosure ");
+            param.Attrs.add(new (Context) AutoClosureAttr(AtLoc, ACLoc,
                                                         /*escaping=*/false));
+          } else {
+            // Fix for SR215
+            // Check if attribute is invalid type attribute 
+            // and actually a declaration attribute
+            if (TypeAttributes::getAttrKindFromString(nextToken.getText()) == TAK_Count 
+                && DeclAttribute::getAttrKindFromString(nextToken.getText()) != TAK_Count) { 
+              SourceLoc AtLoc = consumeToken(tok::at_sign);
+              SourceLoc AttrLoc = consumeToken(tok::identifier);
+              diagnose(AtLoc, diag::decl_attribute_applied_to_type)
+                .fixItRemove(SourceRange(AtLoc, AttrLoc))
+                .fixItInsert(StartLoc, "@" + nextToken.getText().str()+" ");              
+            }
+          }
         }
 
         auto type = parseType(diag::expected_parameter_type);
